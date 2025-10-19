@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  accounts     Account[]
+  categories   Category[]
+  goals        Goal[]
+  creditCards  CreditCard[]
+  imports      Import[]
+
+  @@map("users")
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  INVESTMENT
+  CASH
+
+  @@map("account_type")
+}
+
+model Account {
+  id        String      @id @default(uuid())
+  userId    String      @map("user_id")
+  name      String
+  type      AccountType
+  balance   Decimal     @default(0) @db.Decimal(15, 2)
+  currency  String      @default("BRL")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("accounts")
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+
+  @@map("category_type")
+}
+
+model Category {
+  id        String       @id @default(uuid())
+  userId    String?      @map("user_id")
+  name      String
+  type      CategoryType
+  color     String       @default("#3B82F6")
+  icon      String       @default("💰")
+  isDefault Boolean      @default(false) @map("is_default")
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("categories")
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+
+  @@map("transaction_type")
+}
+
+model Transaction {
+  id             String          @id @default(uuid())
+  accountId      String?         @map("account_id")
+  categoryId     String          @map("category_id")
+  creditCardId   String?         @map("credit_card_id")
+  description    String
+  amount         Decimal         @db.Decimal(15, 2)
+  date           DateTime
+  type           TransactionType
+  isPaid         Boolean         @default(true) @map("is_paid")
+  installments   Int?
+  installmentNum Int?            @map("installment_num")
+  notes          String?
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  account    Account?    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category   Category    @relation(fields: [categoryId], references: [id])
+  creditCard CreditCard? @relation(fields: [creditCardId], references: [id])
+
+  @@map("transactions")
+}
+
+model CreditCard {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  name       String
+  limit      Decimal  @db.Decimal(15, 2)
+  closingDay Int      @map("closing_day")
+  dueDay     Int      @map("due_day")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("credit_cards")
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+
+  @@map("goal_status")
+}
+
+model Goal {
+  id            String     @id @default(uuid())
+  userId        String     @map("user_id")
+  name          String
+  targetAmount  Decimal    @map("target_amount") @db.Decimal(15, 2)
+  currentAmount Decimal    @default(0) @map("current_amount") @db.Decimal(15, 2)
+  deadline      DateTime?
+  status        GoalStatus @default(ACTIVE)
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("goals")
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+
+  @@map("import_status")
+}
+
+model Import {
+  id           String       @id @default(uuid())
+  userId       String       @map("user_id")
+  filename     String
+  status       ImportStatus @default(PENDING)
+  rowsImported Int          @default(0) @map("rows_imported")
+  errorMessage String?      @map("error_message")
+  processedAt  DateTime?    @map("processed_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("imports")
+}
