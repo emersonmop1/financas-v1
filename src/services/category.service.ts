@@ -8,6 +8,12 @@ interface CreateCategoryDTO {
   icon?: string;
 }
 
+interface UpdateCategoryDTO {
+  name?: string;
+  color?: string;
+  icon?: string;
+}
+
 export class CategoryService {
   async findAll(userId: string) {
     // Buscar categorias padrão e do usuário
@@ -48,6 +54,32 @@ export class CategoryService {
     return category;
   }
 
+  async update(id: string, userId: string, data: UpdateCategoryDTO) {
+    // Verificar se a categoria existe e pertence ao usuário
+    const category = await prisma.category.findFirst({
+      where: { id, userId },
+    });
+
+    if (!category) {
+      throw new Error('Categoria não encontrada');
+    }
+
+    if (category.isDefault) {
+      throw new Error('Não é possível editar categorias padrão');
+    }
+
+    const updatedCategory = await prisma.category.update({
+      where: { id },
+      data: {
+        name: data.name,
+        color: data.color,
+        icon: data.icon,
+      },
+    });
+
+    return updatedCategory;
+  }
+
   async delete(id: string, userId: string) {
     // Não permitir deletar categorias padrão
     const category = await prisma.category.findFirst({
@@ -60,6 +92,17 @@ export class CategoryService {
 
     if (category.isDefault) {
       throw new Error('Não é possível deletar categorias padrão');
+    }
+
+    // Verificar se existem transações usando esta categoria
+    const transactionCount = await prisma.transaction.count({
+      where: { categoryId: id },
+    });
+
+    if (transactionCount > 0) {
+      throw new Error(
+        `Não é possível deletar esta categoria pois existem ${transactionCount} transações vinculadas a ela`
+      );
     }
 
     await prisma.category.delete({
