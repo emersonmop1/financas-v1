@@ -7,6 +7,9 @@ import reportRoutes from './report.routes';
 import creditCardRoutes from './creditCard.routes';
 import goalRoutes from './goal.routes';
 import invoiceRoutes from './invoice.routes';
+import investmentRoutes from './investment.routes';
+import budgetRoutes from './budget.routes';
+import bankStatementRoutes from './bankStatement.routes';
 
 const router = Router();
 
@@ -18,6 +21,9 @@ router.use('/reports', reportRoutes);
 router.use('/credit-cards', creditCardRoutes);
 router.use('/goals', goalRoutes);
 router.use('/invoices', invoiceRoutes);
+router.use('/investments', investmentRoutes);
+router.use('/budgets', budgetRoutes);
+router.use('/bank-statement', bankStatementRoutes);
 
 // Health check
 router.get('/health', (req, res) => {

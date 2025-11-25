@@ -13,6 +13,9 @@ interface CreateTransactionDTO {
   installments?: number;
   installmentNum?: number;
   notes?: string;
+  tags?: string[];
+  isReconciled?: boolean;
+  bankReference?: string;
 }
 
 interface UpdateTransactionDTO {
@@ -25,6 +28,9 @@ interface UpdateTransactionDTO {
   type?: TransactionType;
   isPaid?: boolean;
   notes?: string;
+  tags?: string[];
+  isReconciled?: boolean;
+  bankReference?: string;
 }
 
 interface TransactionFilters {
@@ -96,6 +102,9 @@ export class TransactionService {
           installments: data.installments,
           installmentNum: data.installmentNum,
           notes: data.notes,
+          tags: data.tags ?? [],
+          isReconciled: data.isReconciled ?? false,
+          bankReference: data.bankReference,
         },
         include: {
           category: true,
@@ -126,24 +135,11 @@ export class TransactionService {
   }
 
   async findAll(userId: string, filters?: TransactionFilters) {
-    // Buscar todas as contas e cartões do usuário
-    const accounts = await prisma.account.findMany({
-      where: { userId },
-      select: { id: true },
-    });
-
-    const creditCards = await prisma.creditCard.findMany({
-      where: { userId },
-      select: { id: true },
-    });
-
-    const accountIds = accounts.map((acc) => acc.id);
-    const creditCardIds = creditCards.map((card) => card.id);
-
+    // Usar JOIN direto ao invés de buscar IDs primeiro - elimina 2 queries!
     const where: any = {
       OR: [
-        { accountId: { in: accountIds } },
-        { creditCardId: { in: creditCardIds } },
+        { account: { userId } },
+        { creditCard: { userId } },
       ],
     };
 
@@ -292,16 +288,13 @@ export class TransactionService {
   }
 
   async getStats(userId: string, startDate?: Date, endDate?: Date) {
-    const accounts = await prisma.account.findMany({
-      where: { userId },
-      select: { id: true },
-    });
-
-    const accountIds = accounts.map((acc) => acc.id);
-
+    // Usar JOIN direto ao invés de buscar IDs primeiro - elimina 2 queries!
     const where: any = {
-      accountId: { in: accountIds },
-      isPaid: true,
+      OR: [
+        { account: { userId } },
+        { creditCard: { userId } },
+      ],
+      // Removido filtro isPaid para incluir transações de cartão não pagas
     };
 
     if (startDate || endDate) {
@@ -330,5 +323,19 @@ export class TransactionService {
       expense: Number(expense._sum.amount || 0),
       balance: Number(income._sum.amount || 0) - Number(expense._sum.amount || 0),
     };
+  }
+
+  async deleteAll(userId: string) {
+    // Deletar todas as transações do usuário usando JOIN direto - elimina 2 queries!
+    const result = await prisma.transaction.deleteMany({
+      where: {
+        OR: [
+          { account: { userId } },
+          { creditCard: { userId } },
+        ],
+      },
+    });
+
+    return { count: result.count };
   }
 }

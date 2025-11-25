@@ -36,20 +36,59 @@ export class CreditCardService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Adicionar informações de limite disponível para cada cartão
-    const cardsWithLimits = await Promise.all(
-      creditCards.map(async (card) => {
-        const currentBillAmount = await this.getCurrentBillAmount(card.id);
-        const availableLimit = Number(card.limit) - currentBillAmount;
+    // Se não há cartões, retornar vazio
+    if (creditCards.length === 0) {
+      return [];
+    }
 
-        return {
-          ...card,
-          currentBillAmount,
-          availableLimit,
-          limit: Number(card.limit),
-        };
-      })
-    );
+    // Buscar todas as transações de todos os cartões em UMA ÚNICA query!
+    const now = new Date();
+
+    // Calcular períodos para cada cartão
+    const cardPeriods = creditCards.map(card => {
+      const { startDate, endDate } = this.getCurrentBillPeriod(card.closingDay);
+      return { cardId: card.id, startDate, endDate };
+    });
+
+    // Buscar TODAS as transações de TODOS os cartões em UMA query
+    const allTransactions = await prisma.transaction.findMany({
+      where: {
+        OR: cardPeriods.map(period => ({
+          creditCardId: period.cardId,
+          date: {
+            gte: period.startDate,
+            lte: period.endDate,
+          },
+          type: 'EXPENSE',
+        })),
+      },
+    });
+
+    // Agrupar transações por cartão
+    const transactionsByCard = new Map<string, any[]>();
+    allTransactions.forEach(transaction => {
+      if (!transactionsByCard.has(transaction.creditCardId!)) {
+        transactionsByCard.set(transaction.creditCardId!, []);
+      }
+      transactionsByCard.get(transaction.creditCardId!)!.push(transaction);
+    });
+
+    // Calcular totais para cada cartão
+    const cardsWithLimits = creditCards.map(card => {
+      const cardTransactions = transactionsByCard.get(card.id) || [];
+      const currentBillAmount = cardTransactions.reduce(
+        (sum, t) => sum + Number(t.amount),
+        0
+      );
+      const availableLimit = Number(card.limit) - currentBillAmount;
+
+      return {
+        ...card,
+        currentBillAmount,
+        availableLimit,
+        limit: Number(card.limit),
+      };
+    });
 
     return cardsWithLimits;
   }

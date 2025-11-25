@@ -2,31 +2,15 @@ import prisma from '../config/database';
 import { endOfMonth, subMonths, addMonths, format } from 'date-fns';
 
 export class ReportExpandedService {
-  // Helper para buscar IDs de contas e cartões do usuário
-  private async getUserAccountsAndCards(userId: string) {
-    const accounts = await prisma.account.findMany({
-      where: { userId },
-      select: { id: true },
-    });
-
-    const creditCards = await prisma.creditCard.findMany({
-      where: { userId },
-      select: { id: true },
-    });
-
-    return {
-      accountIds: accounts.map((acc) => acc.id),
-      creditCardIds: creditCards.map((card) => card.id),
-    };
-  }
+  // OTIMIZAÇÃO: Removido getUserAccountsAndCards - agora usamos JOIN direto em todas as queries!
+  // Isso elimina 2 queries extras em CADA método do serviço
 
   /**
    * 1. Cash Flow Forecast - Previsão de fluxo de caixa
    * Projeta os próximos 3 meses baseado em médias e recorrências
    */
   async getCashFlowForecast(userId: string, months: number = 3) {
-    const { accountIds, creditCardIds } = await this.getUserAccountsAndCards(userId);
-
+    // OTIMIZAÇÃO: Usar JOIN direto - elimina 2 queries!
     // Calcular saldo atual total
     const accounts = await prisma.account.findMany({
       where: { userId },
@@ -39,8 +23,8 @@ export class ReportExpandedService {
     const transactions = await prisma.transaction.findMany({
       where: {
         OR: [
-          { accountId: { in: accountIds } },
-          { creditCardId: { in: creditCardIds } },
+          { account: { userId } },
+          { creditCard: { userId } },
         ],
         isPaid: true,
         date: { gte: sixMonthsAgo },
@@ -114,15 +98,15 @@ export class ReportExpandedService {
    * Usa desvio padrão para identificar transações atípicas
    */
   async detectAnomalies(userId: string, threshold: number = 2.0) {
-    const { accountIds, creditCardIds } = await this.getUserAccountsAndCards(userId);
+    
 
     const sixMonthsAgo = subMonths(new Date(), 6);
 
     const transactions = await prisma.transaction.findMany({
       where: {
         OR: [
-          { accountId: { in: accountIds } },
-          { creditCardId: { in: creditCardIds } },
+          { account: { userId } },
+          { creditCard: { userId } },
         ],
         type: 'EXPENSE',
         isPaid: true,
@@ -215,7 +199,7 @@ export class ReportExpandedService {
    * 3. Year-over-Year Comparison - Comparação ano a ano
    */
   async getYoYComparison(userId: string, year1: number, year2: number) {
-    const { accountIds, creditCardIds } = await this.getUserAccountsAndCards(userId);
+    
 
     const months = [];
 
@@ -230,8 +214,8 @@ export class ReportExpandedService {
         prisma.transaction.findMany({
           where: {
             OR: [
-              { accountId: { in: accountIds } },
-              { creditCardId: { in: creditCardIds } },
+              { account: { userId } },
+              { creditCard: { userId } },
             ],
             isPaid: true,
             date: { gte: startYear1, lte: endYear1 },
@@ -240,8 +224,8 @@ export class ReportExpandedService {
         prisma.transaction.findMany({
           where: {
             OR: [
-              { accountId: { in: accountIds } },
-              { creditCardId: { in: creditCardIds } },
+              { account: { userId } },
+              { creditCard: { userId } },
             ],
             isPaid: true,
             date: { gte: startYear2, lte: endYear2 },
@@ -303,7 +287,7 @@ export class ReportExpandedService {
    * 4. Budget vs Actual Performance
    */
   async getBudgetPerformance(userId: string, month: number, year: number) {
-    const { accountIds, creditCardIds } = await this.getUserAccountsAndCards(userId);
+    
 
     const budgets = await prisma.budget.findMany({
       where: {
@@ -322,8 +306,8 @@ export class ReportExpandedService {
     const transactions = await prisma.transaction.findMany({
       where: {
         OR: [
-          { accountId: { in: accountIds } },
-          { creditCardId: { in: creditCardIds } },
+          { account: { userId } },
+          { creditCard: { userId } },
         ],
         type: 'EXPENSE',
         isPaid: true,
@@ -385,13 +369,13 @@ export class ReportExpandedService {
    * 5. Income Distribution - Distribuição de receitas
    */
   async getIncomeDistribution(userId: string, startDate: Date, endDate: Date) {
-    const { accountIds, creditCardIds } = await this.getUserAccountsAndCards(userId);
+    
 
     const transactions = await prisma.transaction.findMany({
       where: {
         OR: [
-          { accountId: { in: accountIds } },
-          { creditCardId: { in: creditCardIds } },
+          { account: { userId } },
+          { creditCard: { userId } },
         ],
         type: 'INCOME',
         isPaid: true,
@@ -457,13 +441,13 @@ export class ReportExpandedService {
    * 6. Savings Rate Analysis - Taxa de poupança
    */
   async getSavingsRate(userId: string, startDate: Date, endDate: Date) {
-    const { accountIds, creditCardIds } = await this.getUserAccountsAndCards(userId);
+    
 
     const transactions = await prisma.transaction.findMany({
       where: {
         OR: [
-          { accountId: { in: accountIds } },
-          { creditCardId: { in: creditCardIds } },
+          { account: { userId } },
+          { creditCard: { userId } },
         ],
         isPaid: true,
         date: { gte: startDate, lte: endDate },

@@ -6,7 +6,7 @@ import { AuthRequest } from '../types';
 const transactionService = new TransactionService();
 
 const createTransactionSchema = z.object({
-  accountId: z.string().uuid(),
+  accountId: z.string().uuid().optional(),
   categoryId: z.string(),
   creditCardId: z.string().uuid().optional(),
   description: z.string().min(1, 'Descrição é obrigatória'),
@@ -17,6 +17,9 @@ const createTransactionSchema = z.object({
   installments: z.number().int().positive().optional(),
   installmentNum: z.number().int().positive().optional(),
   notes: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  isReconciled: z.boolean().optional(),
+  bankReference: z.string().optional(),
 });
 
 const updateTransactionSchema = z.object({
@@ -29,6 +32,9 @@ const updateTransactionSchema = z.object({
   type: z.enum(['INCOME', 'EXPENSE']).optional(),
   isPaid: z.boolean().optional(),
   notes: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  isReconciled: z.boolean().optional(),
+  bankReference: z.string().optional(),
 });
 
 export class TransactionController {
@@ -156,6 +162,22 @@ export class TransactionController {
 
       const stats = await transactionService.getStats(req.userId, startDate, endDate);
       return res.json(stats);
+    } catch (error) {
+      if (error instanceof Error) {
+        return res.status(400).json({ error: error.message });
+      }
+      throw error;
+    }
+  }
+
+  async deleteAll(req: AuthRequest, res: Response) {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ error: 'Não autorizado' });
+      }
+
+      const result = await transactionService.deleteAll(req.userId);
+      return res.json(result);
     } catch (error) {
       if (error instanceof Error) {
         return res.status(400).json({ error: error.message });

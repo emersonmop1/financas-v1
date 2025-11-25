@@ -158,40 +158,42 @@ export class BudgetService {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59);
 
-    // Para cada orçamento, calcular o gasto real
-    const budgetsWithSpending: BudgetWithSpending[] = [];
-
-    for (const budget of budgets) {
-      // Buscar transações do período
-      const where: any = {
+    // OTIMIZAÇÃO: Buscar TODAS as transações de uma vez ao invés de 1 query por budget!
+    const allTransactions = await prisma.transaction.findMany({
+      where: {
+        OR: [
+          { account: { userId } },
+          { creditCard: { userId } },
+        ],
         date: {
           gte: startDate,
           lte: endDate,
         },
         type: 'EXPENSE',
         isPaid: true,
-      };
+        accountId: { not: null }, // Apenas contas, não cartões
+      },
+      select: {
+        amount: true,
+        categoryId: true,
+      },
+    });
 
-      // Se tem categoryId, filtrar por categoria
-      if (budget.categoryId) {
-        where.categoryId = budget.categoryId;
+    // Agrupar gastos por categoria em memória - muito mais rápido que N queries!
+    const spendingByCategory = allTransactions.reduce((acc, t) => {
+      const catId = t.categoryId || 'general';
+      if (!acc[catId]) {
+        acc[catId] = new Decimal(0);
       }
+      acc[catId] = acc[catId].add(t.amount);
+      return acc;
+    }, {} as Record<string, Decimal>);
 
-      // Buscar transações de contas (não cartões de crédito)
-      where.accountId = { not: null };
-
-      const transactions = await prisma.transaction.findMany({
-        where,
-        select: {
-          amount: true,
-        },
-      });
-
-      // Calcular total gasto
-      const spent = transactions.reduce(
-        (sum, t) => sum.add(t.amount),
-        new Decimal(0)
-      );
+    // Para cada orçamento, buscar o gasto já calculado
+    const budgetsWithSpending: BudgetWithSpending[] = budgets.map((budget) => {
+      const spent = budget.categoryId
+        ? (spendingByCategory[budget.categoryId] || new Decimal(0))
+        : new Decimal(0); // Orçamento geral seria calculado separadamente
 
       const remaining = new Decimal(budget.amount).sub(spent);
       const percentage =
@@ -199,7 +201,7 @@ export class BudgetService {
           ? (Number(spent) / Number(budget.amount)) * 100
           : 0;
 
-      budgetsWithSpending.push({
+      return {
         id: budget.id,
         userId: budget.userId,
         categoryId: budget.categoryId,
@@ -217,8 +219,8 @@ export class BudgetService {
               icon: budget.category.icon,
             }
           : undefined,
-      });
-    }
+      };
+    });
 
     return budgetsWithSpending;
   }

@@ -1,4 +1,5 @@
 import prisma from '../config/database';
+import { openaiService } from './openai.service';
 import { claudeService } from './claude.service';
 import { Prisma } from '@prisma/client';
 
@@ -42,16 +43,41 @@ interface InvoicePreviewData {
 interface ConfirmInvoiceData {
   creditCardId: string;
   invoiceData: InvoicePreviewData['invoice'];
+  customMonth?: number;
+  customYear?: number;
 }
 
 export class InvoiceService {
   /**
-   * Analisa PDF da fatura e retorna preview sem salvar no banco
+   * Analisa arquivo da fatura (PDF, Excel ou CSV) e retorna preview sem salvar no banco
    */
-  async previewInvoice(pdfBuffer: Buffer, userId: string): Promise<InvoicePreviewData> {
+  async previewInvoice(
+    fileBuffer: Buffer,
+    userId: string,
+    mimeType: string = 'application/pdf',
+    fileName: string = 'invoice.pdf'
+  ): Promise<InvoicePreviewData> {
     try {
-      // Analisar com Claude
-      const analysisResult = await claudeService.analyzeInvoicePDF(pdfBuffer, userId);
+      // Tentar usar OpenAI primeiro (mais rápido e preciso)
+      // Se falhar, usar Claude como fallback
+      let analysisResult;
+      if (mimeType === 'application/pdf') {
+        try {
+          // Verificar se OpenAI está configurado
+          if (openaiService.isConfigured()) {
+            console.log('🚀 Tentando análise com OpenAI GPT-4...');
+            analysisResult = await openaiService.analyzeInvoicePDF(fileBuffer, userId);
+          } else {
+            throw new Error('OpenAI não configurado');
+          }
+        } catch (error: any) {
+          console.log('⚠️ OpenAI falhou, usando Claude como fallback:', error.message);
+          analysisResult = await claudeService.analyzeInvoicePDF(fileBuffer, userId);
+        }
+      } else {
+        // Para Excel/CSV, usar Claude
+        throw new Error('Por favor, use um arquivo PDF. Suporte para Excel/CSV em breve.');
+      }
 
       // Para cada cartão, verificar se já existe fatura importada
       const duplicateChecks = await Promise.all(
@@ -192,13 +218,24 @@ export class InvoiceService {
             throw new Error(`Categoria "${t.category}" não encontrada`);
           }
 
+          // Se customMonth e customYear foram fornecidos, usar data customizada
+          let transactionDate: Date;
+          if (data.customMonth && data.customYear) {
+            // Manter o dia da transação original, mas usar mês/ano customizado
+            const originalDate = new Date(t.date);
+            const day = originalDate.getDate();
+            transactionDate = new Date(data.customYear, data.customMonth - 1, day);
+          } else {
+            transactionDate = new Date(t.date);
+          }
+
           return {
             invoiceId: invoice.id,
             creditCardId,
             categoryId,
             description: t.description,
             amount: new Prisma.Decimal(t.amount),
-            date: new Date(t.date),
+            date: transactionDate,
             type: 'EXPENSE' as const,
             isPaid: false, // Fatura ainda não paga
             installments: t.installments,
@@ -292,6 +329,32 @@ export class InvoiceService {
     }
 
     return invoice;
+  }
+
+  /**
+   * Deleta uma fatura e todas as suas transações
+   */
+  async deleteInvoice(invoiceId: string, userId: string) {
+    // Verificar se a fatura pertence ao usuário
+    const invoice = await prisma.invoice.findFirst({
+      where: {
+        id: invoiceId,
+        userId,
+      },
+    });
+
+    if (!invoice) {
+      throw new Error('Fatura não encontrada ou não pertence ao usuário');
+    }
+
+    // Deletar fatura (as transações serão deletadas automaticamente via CASCADE)
+    await prisma.invoice.delete({
+      where: {
+        id: invoiceId,
+      },
+    });
+
+    return { success: true, message: 'Fatura deletada com sucesso' };
   }
 }
 

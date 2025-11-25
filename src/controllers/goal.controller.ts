@@ -7,16 +7,30 @@ const goalService = new GoalService();
 
 const createGoalSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
+  type: z.enum(['SAVINGS', 'CATEGORY_LIMIT', 'BALANCE_TARGET', 'EXPENSE_REDUCTION']),
   targetAmount: z.number().positive('Valor meta deve ser positivo'),
   currentAmount: z.number().min(0).optional(),
+  categoryId: z.string().uuid().optional(),
+  period: z.enum(['MONTHLY', 'YEARLY', 'CUSTOM']),
+  startDate: z.string().transform((val) => new Date(val)).optional(),
   deadline: z.string().transform((val) => new Date(val)).optional(),
+  description: z.string().optional(),
+  icon: z.string().optional(),
+  color: z.string().optional(),
 });
 
 const updateGoalSchema = z.object({
   name: z.string().min(1).optional(),
+  type: z.enum(['SAVINGS', 'CATEGORY_LIMIT', 'BALANCE_TARGET', 'EXPENSE_REDUCTION']).optional(),
   targetAmount: z.number().positive().optional(),
   currentAmount: z.number().min(0).optional(),
+  categoryId: z.string().uuid().optional(),
+  period: z.enum(['MONTHLY', 'YEARLY', 'CUSTOM']).optional(),
+  startDate: z.string().transform((val) => new Date(val)).optional(),
   deadline: z.string().transform((val) => new Date(val)).optional(),
+  description: z.string().optional(),
+  icon: z.string().optional(),
+  color: z.string().optional(),
   status: z.enum(['ACTIVE', 'COMPLETED', 'CANCELLED']).optional(),
 });
 

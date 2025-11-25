@@ -4,17 +4,13 @@ import { startOfMonth, endOfMonth, subMonths, format } from 'date-fns';
 export class ReportService {
   // Estatísticas por categoria
   async getExpensesByCategory(userId: string, startDate?: Date, endDate?: Date) {
-    const accounts = await prisma.account.findMany({
-      where: { userId },
-      select: { id: true },
-    });
-
-    const accountIds = accounts.map((acc) => acc.id);
-
+    // OTIMIZAÇÃO: Usar JOIN direto - elimina 2 queries!
     const where: any = {
-      accountId: { in: accountIds },
+      OR: [
+        { account: { userId } },
+        { creditCard: { userId } },
+      ],
       type: 'EXPENSE',
-      isPaid: true,
     };
 
     if (startDate || endDate) {
@@ -55,72 +51,72 @@ export class ReportService {
 
   // Evolução mensal (últimos 6 meses)
   async getMonthlyEvolution(userId: string) {
-    const accounts = await prisma.account.findMany({
-      where: { userId },
-      select: { id: true },
+    // OTIMIZAÇÃO MÁXIMA: 1 única query ao invés de 12 queries (2 por mês × 6 meses)!
+    const sixMonthsAgo = subMonths(startOfMonth(new Date()), 5);
+
+    // Buscar todas as transações dos últimos 6 meses de uma vez
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        OR: [
+          { account: { userId } },
+          { creditCard: { userId } },
+        ],
+        date: {
+          gte: sixMonthsAgo,
+        },
+      },
+      select: {
+        date: true,
+        type: true,
+        amount: true,
+      },
     });
 
-    const accountIds = accounts.map((acc) => acc.id);
+    // Agrupar por mês em memória - muito mais rápido que múltiplas queries!
+    const monthlyData = new Map<string, { income: number; expense: number }>();
 
-    const months = [];
-    const data = [];
-
-    // Gerar últimos 6 meses
+    // Inicializar últimos 6 meses
     for (let i = 5; i >= 0; i--) {
       const date = subMonths(new Date(), i);
-      const startDate = startOfMonth(date);
-      const endDate = endOfMonth(date);
+      const monthKey = format(date, 'MMM/yy');
+      monthlyData.set(monthKey, { income: 0, expense: 0 });
+    }
 
-      const [income, expense] = await Promise.all([
-        prisma.transaction.aggregate({
-          where: {
-            accountId: { in: accountIds },
-            type: 'INCOME',
-            isPaid: true,
-            date: {
-              gte: startDate,
-              lte: endDate,
-            },
-          },
-          _sum: { amount: true },
-        }),
-        prisma.transaction.aggregate({
-          where: {
-            accountId: { in: accountIds },
-            type: 'EXPENSE',
-            isPaid: true,
-            date: {
-              gte: startDate,
-              lte: endDate,
-            },
-          },
-          _sum: { amount: true },
-        }),
-      ]);
+    // Agrupar transações por mês
+    transactions.forEach((t) => {
+      const monthKey = format(t.date, 'MMM/yy');
+      const data = monthlyData.get(monthKey);
 
-      const incomeValue = Number(income._sum.amount || 0);
-      const expenseValue = Number(expense._sum.amount || 0);
+      if (data) {
+        if (t.type === 'INCOME') {
+          data.income += Number(t.amount);
+        } else {
+          data.expense += Number(t.amount);
+        }
+      }
+    });
 
-      data.push({
-        month: format(date, 'MMM/yy'),
-        income: incomeValue,
-        expense: expenseValue,
-        balance: incomeValue - expenseValue,
+    // Converter para array
+    const result = [];
+    for (let i = 5; i >= 0; i--) {
+      const date = subMonths(new Date(), i);
+      const monthKey = format(date, 'MMM/yy');
+      const data = monthlyData.get(monthKey)!;
+
+      result.push({
+        month: monthKey,
+        income: data.income,
+        expense: data.expense,
+        balance: data.income - data.expense,
       });
     }
 
-    return data;
+    return result;
   }
 
   // Comparação mensal (mês atual vs anterior)
   async getMonthlyComparison(userId: string) {
-    const accounts = await prisma.account.findMany({
-      where: { userId },
-      select: { id: true },
-    });
-
-    const accountIds = accounts.map((acc) => acc.id);
-
+    // OTIMIZAÇÃO: Usar JOIN direto - elimina 2 queries iniciais!
     const currentMonth = {
       start: startOfMonth(new Date()),
       end: endOfMonth(new Date()),
@@ -132,8 +128,8 @@ export class ReportService {
     };
 
     const [currentStats, previousStats] = await Promise.all([
-      this.getStatsForPeriod(accountIds, currentMonth.start, currentMonth.end),
-      this.getStatsForPeriod(accountIds, previousMonth.start, previousMonth.end),
+      this.getStatsForPeriod(userId, currentMonth.start, currentMonth.end),
+      this.getStatsForPeriod(userId, previousMonth.start, previousMonth.end),
     ]);
 
     return {
@@ -147,13 +143,16 @@ export class ReportService {
     };
   }
 
-  private async getStatsForPeriod(accountIds: string[], startDate: Date, endDate: Date) {
+  private async getStatsForPeriod(userId: string, startDate: Date, endDate: Date) {
+    // Usar JOIN direto ao invés de IDs
     const [income, expense] = await Promise.all([
       prisma.transaction.aggregate({
         where: {
-          accountId: { in: accountIds },
+          OR: [
+            { account: { userId } },
+            { creditCard: { userId } },
+          ],
           type: 'INCOME',
-          isPaid: true,
           date: {
             gte: startDate,
             lte: endDate,
@@ -163,9 +162,11 @@ export class ReportService {
       }),
       prisma.transaction.aggregate({
         where: {
-          accountId: { in: accountIds },
+          OR: [
+            { account: { userId } },
+            { creditCard: { userId } },
+          ],
           type: 'EXPENSE',
-          isPaid: true,
           date: {
             gte: startDate,
             lte: endDate,

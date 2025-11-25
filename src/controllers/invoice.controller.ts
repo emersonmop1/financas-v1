@@ -37,6 +37,8 @@ const confirmInvoiceSchema = z.object({
       })
     ),
   }),
+  customMonth: z.number().int().min(1).max(12).optional(),
+  customYear: z.number().int().min(2000).max(2100).optional(),
 });
 
 export class InvoiceController {
@@ -52,18 +54,31 @@ export class InvoiceController {
 
       // Verificar se há arquivo
       if (!req.file) {
-        return res.status(400).json({ error: 'Arquivo PDF é obrigatório' });
+        return res.status(400).json({ error: 'Arquivo é obrigatório' });
       }
 
-      // Verificar tipo de arquivo
-      if (req.file.mimetype !== 'application/pdf') {
-        return res.status(400).json({ error: 'Apenas arquivos PDF são permitidos' });
+      // Tipos de arquivo aceitos
+      const allowedMimeTypes = [
+        'application/pdf',
+        'text/csv',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel.sheet.macroEnabled.12',
+      ];
+
+      if (!allowedMimeTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({ error: 'Apenas arquivos PDF, Excel (.xlsx, .xls, .xlsm) e CSV são permitidos' });
       }
 
       console.log(`📄 Processando fatura: ${req.file.originalname} (${(req.file.size / 1024).toFixed(2)} KB)`);
 
-      // Analisar fatura
-      const preview = await invoiceService.previewInvoice(req.file.buffer, req.userId);
+      // Analisar fatura (PDF ou Excel/CSV)
+      const preview = await invoiceService.previewInvoice(
+        req.file.buffer,
+        req.userId,
+        req.file.mimetype,
+        req.file.originalname
+      );
 
       return res.json(preview);
     } catch (error: any) {
@@ -138,6 +153,27 @@ export class InvoiceController {
     } catch (error: any) {
       console.error('Erro ao buscar detalhes:', error);
       return res.status(404).json({ error: error.message || 'Fatura não encontrada' });
+    }
+  }
+
+  /**
+   * DELETE /api/invoices/:id
+   * Deleta uma fatura e todas as suas transações
+   */
+  async delete(req: AuthRequest, res: Response) {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({ error: 'Não autorizado' });
+      }
+
+      const { id } = req.params;
+
+      const result = await invoiceService.deleteInvoice(id, req.userId);
+
+      return res.json(result);
+    } catch (error: any) {
+      console.error('Erro ao deletar fatura:', error);
+      return res.status(400).json({ error: error.message || 'Erro ao deletar fatura' });
     }
   }
 }

@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import 'express-async-errors';
 import routes from './routes';
 import { errorHandler } from './middleware/errorHandler';
+import { performanceLogger } from './middleware/performanceLogger';
 
 dotenv.config();
 
@@ -13,6 +14,9 @@ const PORT = process.env.PORT || 3001;
 // Middlewares
 app.use(cors());
 app.use(express.json());
+
+// Performance logger
+app.use(performanceLogger);
 
 // Routes
 app.use('/api', routes);

@@ -1,18 +1,32 @@
 import prisma from '../config/database';
-import { GoalStatus } from '@prisma/client';
+import { GoalStatus, GoalType, GoalPeriod } from '@prisma/client';
 
 interface CreateGoalDTO {
   name: string;
+  type: GoalType;
   targetAmount: number;
   currentAmount?: number;
+  categoryId?: string;
+  period: GoalPeriod;
+  startDate?: Date;
   deadline?: Date;
+  description?: string;
+  icon?: string;
+  color?: string;
 }
 
 interface UpdateGoalDTO {
   name?: string;
+  type?: GoalType;
   targetAmount?: number;
   currentAmount?: number;
+  categoryId?: string;
+  period?: GoalPeriod;
+  startDate?: Date;
   deadline?: Date;
+  description?: string;
+  icon?: string;
+  color?: string;
   status?: GoalStatus;
 }
 
@@ -22,10 +36,20 @@ export class GoalService {
       data: {
         userId,
         name: data.name,
+        type: data.type,
         targetAmount: data.targetAmount,
         currentAmount: data.currentAmount || 0,
-        deadline: data.deadline,
+        categoryId: data.categoryId,
+        period: data.period,
+        startDate: data.startDate && !isNaN(data.startDate.getTime()) ? data.startDate : undefined,
+        deadline: data.deadline && !isNaN(data.deadline.getTime()) ? data.deadline : undefined,
+        description: data.description,
+        icon: data.icon,
+        color: data.color,
         status: 'ACTIVE',
+      },
+      include: {
+        category: true,
       },
     });
 
@@ -41,6 +65,9 @@ export class GoalService {
 
     const goals = await prisma.goal.findMany({
       where,
+      include: {
+        category: true,
+      },
       orderBy: [{ status: 'asc' }, { deadline: 'asc' }],
     });
 
@@ -59,6 +86,9 @@ export class GoalService {
   async findById(id: string, userId: string) {
     const goal = await prisma.goal.findFirst({
       where: { id, userId },
+      include: {
+        category: true,
+      },
     });
 
     if (!goal) {
@@ -80,9 +110,16 @@ export class GoalService {
     // Verificar se a meta pertence ao usuário
     await this.findById(id, userId);
 
+    // Tratar datas inválidas
+    const updateData = {
+      ...data,
+      startDate: data.startDate && !isNaN(data.startDate.getTime()) ? data.startDate : undefined,
+      deadline: data.deadline && !isNaN(data.deadline.getTime()) ? data.deadline : undefined,
+    };
+
     const goal = await prisma.goal.update({
       where: { id },
-      data,
+      data: updateData,
     });
 
     // Verificar se a meta foi completada
